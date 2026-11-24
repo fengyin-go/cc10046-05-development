@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from app.routers.chains import (
     run_crawl_pipeline,
     run_data_process,
+    run_quote_pipeline,
     run_reliability,
     run_auth,
     run_delivery,
@@ -91,3 +92,21 @@ class TestDelivery:
         assert steps["export"]["导出格式"] == "csv"
         assert steps["audit"]["操作类型"] == "export"
         assert steps["cleanup"]["任务标识"] == "CLEANUP-B-DEL-1"
+
+class TestQuotePipeline:
+    def test_partial_failure_keeps_complete_page(self):
+        from app.services import quote_ledger as ledger_module
+
+        ledger_module.quote_ledger.reset()
+        result = run_quote_pipeline({"page_numbers": [4, 7]})
+        assert result["chain"] == "quote-pipeline"
+        parse_step = result["steps"]["parse_pages"]
+        assert parse_step["status"] == "部分成功"
+        pages = {page["page"]: page for page in parse_step["pages"]}
+        assert pages[4]["status"] == "已解析"
+        assert pages[7]["pending_positions"] == [3]
+        map_step = result["steps"]["map_records"]
+        assert map_step["counts"]["accepted"] == 5
+        assert map_step["counts"]["pending"] == 1
+        assert result["results"]["counts"]["pending"] == 1
+        ledger_module.quote_ledger.reset()

@@ -23,6 +23,7 @@ from app.services.session_manager import SessionManagerService
 from app.services.export_channel import ExportChannelService
 from app.services.crawl_audit import CrawlAuditService
 from app.services.data_cleanup import DataCleanupService
+from app.services.quote_ledger import quote_ledger
 
 router = APIRouter(prefix="/api/chains", tags=["业务链路"])
 
@@ -97,6 +98,50 @@ def run_data_process(payload: dict[str, Any]) -> dict[str, Any]:
             "clean_html": {"original_length": clean_result["original_length"], "cleaned_length": clean_result["cleaned_length"]},
             "dedup": {"original_count": dedup_result["original_count"], "deduped_count": dedup_result["deduped_count"], "removed_count": dedup_result["removed_count"]},
         },
+    }
+
+
+@router.post("/quote-pipeline")
+def run_quote_pipeline(payload: dict[str, Any]) -> dict[str, Any]:
+    """报价链路：多页批量解析 → 逐条字段映射 → 结果回查。
+
+    ``source_pages`` 支持页码列表或 ``[{page, html}]``；只给页码时使用演示
+    来源页。返回里同时给出本次解析明细和映射后的可用/待补视图。
+    """
+    source_pages = payload.get("source_pages") or payload.get("page_numbers") or []
+    parse_result = _parse.domain_parse_source_pages(
+        source_pages,
+        selectors=payload.get("selectors") or {},
+        rule_id=int(payload.get("rule_id", 0) or 0),
+    )
+    map_result = _mapper.domain_map_source_records(
+        parse_result["records"],
+        payload.get("mapping_rules") or [],
+        batch_id=parse_result.get("batch_id", ""),
+    )
+    map_result["results"] = quote_ledger.results()
+    return {
+        "chain": "quote-pipeline",
+        "steps": {
+            "parse_pages": {
+                "batch_id": parse_result.get("batch_id", ""),
+                "status": parse_result["status"],
+                "counts": parse_result["counts"],
+                "pages": [
+                    {
+                        "page": page["page"],
+                        "status": page["status"],
+                        "pending_positions": page["pending_positions"],
+                    }
+                    for page in parse_result["pages"]
+                ],
+            },
+            "map_records": {
+                "counts": map_result["counts"],
+                "message": map_result["message"],
+            },
+        },
+        "results": map_result.get("results", {}),
     }
 
 

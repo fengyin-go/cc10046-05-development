@@ -15,6 +15,13 @@
       </div>
     </header>
 
+    <p v-if="workflowHint" class="workflow-hint">
+      <span>{{ workflowHint }}</span>
+      <RouterLink class="link" to="/quote-workflow" data-testid="open-quote-workflow">
+        进入批量报价解析
+      </RouterLink>
+    </p>
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -107,6 +114,16 @@ import type { EntryRow } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)
+// 解析规则和字段映射共享同一条报价工作流，从这里给一个入口，避免值班员找不到。
+const workflowHint = computed(() => {
+  if (props.moduleKey === 'parser_rule') {
+    return '多页来源 HTML 的批量解析、修复坏片段重送，请使用批量报价解析工作台。'
+  }
+  if (props.moduleKey === 'field_mapper') {
+    return '来源页记录集的逐条映射和来源位置回查，请使用批量报价解析工作台。'
+  }
+  return ''
+})
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
